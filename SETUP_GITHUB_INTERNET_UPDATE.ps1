@@ -7,18 +7,6 @@ function Fail([string]$Message) {
     exit 1
 }
 
-function Is-Admin {
-    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $p = New-Object Security.Principal.WindowsPrincipal($id)
-    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-if (-not (Is-Admin)) {
-    $arg = '-NoProfile -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"'
-    Start-Process powershell.exe -Verb RunAs -ArgumentList $arg
-    exit
-}
-
 Clear-Host
 Write-Host "VOICE NOTES V15 - GITHUB INTERNET UPDATE" -ForegroundColor Cyan
 Write-Host ""
@@ -44,11 +32,9 @@ $keyInfo = "C:\VOICE-NOTES-KEYS\voice-notes-key.properties"
 $gradle = "C:\Gradle\gradle-8.9\bin\gradle.bat"
 $sdk = Join-Path $env:LOCALAPPDATA "Android\Sdk"
 $outApk = Join-Path $env:USERPROFILE "Downloads\VOICE_NOTES_LATEST.apk"
-$outJson = Join-Path $env:USERPROFILE "Downloads\update.json"
-$githubBase = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main"
 
 if (!(Test-Path $main)) { Fail "MainActivity.java not found." }
-if (!(Test-Path $gradleFile)) { Fail "app\build.gradle not found." }
+if (!(Test-Path $gradleFile)) { Fail "app build.gradle not found." }
 if (!(Test-Path $keyPath)) { Fail "Release keystore not found." }
 if (!(Test-Path $keyInfo)) { Fail "Key properties not found." }
 if (!(Test-Path $gradle)) { Fail "Gradle 8.9 not found." }
@@ -58,47 +44,20 @@ $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $backup = $project + "-BACKUP-GITHUB-" + $stamp
 Copy-Item -Recurse -Force $project $backup
 
-Write-Host "[2/4] Switching updater to GitHub Internet..." -ForegroundColor Yellow
+Write-Host "[2/4] Patching Internet updater..." -ForegroundColor Yellow
 $src = [IO.File]::ReadAllText($main)
+$githubUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main"
 
-$oldBlock = @'
-        updateBaseUrl = prefs.getString(KEY_LAN_BASE_URL, null);
-        startUpdateCenterDiscovery(); // only for APK updates on the local Wi-Fi
-'@
-
-$newBlock = @'
-        updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main";
-        prefs.edit().putString(KEY_LAN_BASE_URL, updateBaseUrl).apply();
-'@
-
-if ($src.Contains($oldBlock)) {
-    $src = $src.Replace($oldBlock, $newBlock)
-}
-
-$firebaseLine = 'updateBaseUrl = "https://voice-notes-kb.web.app";'
-$githubLine = 'updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main";'
-$src = $src.Replace($firebaseLine, $githubLine)
-
-$methodMarker = "// GITHUB_UPDATE_BASE"
-if (-not $src.Contains($methodMarker)) {
-    $methodOld = '    private void checkForAppUpdate() {'
-    $methodNew = '    private void checkForAppUpdate() {' + [Environment]::NewLine +
-                 '        updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main"; // GITHUB_UPDATE_BASE'
-    $src = $src.Replace($methodOld, $methodNew)
-}
-
+$src = $src.Replace('updateBaseUrl = prefs.getString(KEY_LAN_BASE_URL, null);', 'updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main";')
+$src = $src.Replace('updateBaseUrl = "https://voice-notes-kb.web.app";', 'updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main";')
+$src = $src.Replace('updateBaseUrl = null;', 'updateBaseUrl = "https://raw.githubusercontent.com/kostaselectroexpert-ux/voice-notes-updates/main";')
+$src = $src.Replace('startUpdateCenterDiscovery(); // only for APK updates on the local Wi-Fi', '// GitHub Internet updater enabled')
 $src = $src.Replace('base + "/voice-notes/update.json?ts="', 'base + "/update.json?ts="')
 $src = $src.Replace('o.optString("apkPath", "/voice-notes/latest.apk")', 'o.optString("apkPath", "/VOICE_NOTES_LATEST.apk")')
-$src = $src.Replace('Ενημέρωση εφαρμογής μέσω Wi‑Fi', 'Ενημέρωση εφαρμογής μέσω Internet')
-$src = $src.Replace('Update Center δεν βρέθηκε ακόμη στο ίδιο Wi‑Fi', 'Internet Update Center')
-$src = $src.Replace('Update Center Online • πάτησε για έλεγχο', 'Internet • Wi‑Fi ή 4G/5G • πάτησε για έλεγχο')
-$src = $src.Replace('Το APK θα κατέβει από το laptop μέσω του ίδιου Wi‑Fi.', 'Το APK θα κατέβει μέσω Internet από το GitHub.')
-$src = $src.Replace('μέσω Wi‑Fi...', 'μέσω Internet...')
-$src = $src.Replace('Δεν μπόρεσα να επικοινωνήσω με το Update Center.', 'Δεν μπόρεσα να ελέγξω για ενημέρωση μέσω Internet.')
-$src = $src.Replace('"VOICE NOTES V13 • Φωτογραφίες • LAN • Στατιστικά"', '"VOICE NOTES V15 • GitHub Internet Update"')
-$src = $src.Replace('"VOICE NOTES V14 • Internet Update"', '"VOICE NOTES V15 • GitHub Internet Update"')
-$src = $src.Replace('.setTitle("VOICE NOTES V13")', '.setTitle("VOICE NOTES V15")')
-$src = $src.Replace('.setTitle("VOICE NOTES V14")', '.setTitle("VOICE NOTES V15")')
+
+if ($src -notmatch "raw\.githubusercontent\.com/kostaselectroexpert-ux/voice-notes-updates/main") {
+    Fail "GitHub updater patch was not applied."
+}
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($main, $src, $utf8)
@@ -137,21 +96,11 @@ Push-Location $project
 & $gradle @gradleArgs
 $buildCode = $LASTEXITCODE
 Pop-Location
-
 if ($buildCode -ne 0) { Fail "Android build failed." }
 
 $built = Join-Path $project "app\build\outputs\apk\release\app-release.apk"
 if (!(Test-Path $built)) { Fail "Built APK not found." }
 Copy-Item -Force $built $outApk
-
-$meta = @'
-{
-  "versionCode": 15,
-  "versionName": "15.0",
-  "apkPath": "/VOICE_NOTES_LATEST.apk"
-}
-'@
-[IO.File]::WriteAllText($outJson, $meta, $utf8)
 
 Write-Host "[4/4] Done." -ForegroundColor Yellow
 Write-Host ""
@@ -160,11 +109,8 @@ Write-Host " V15 READY FOR GITHUB" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "APK: $outApk" -ForegroundColor White
-Write-Host "JSON: $outJson" -ForegroundColor White
 Write-Host ""
-Write-Host "A GitHub upload page will open now." -ForegroundColor Cyan
-Write-Host "Upload ONLY this file from Downloads:" -ForegroundColor Cyan
-Write-Host "  VOICE_NOTES_LATEST.apk" -ForegroundColor White
+Write-Host "Upload ONLY VOICE_NOTES_LATEST.apk to the repository." -ForegroundColor Cyan
 
 try {
     Start-Process "https://github.com/kostaselectroexpert-ux/voice-notes-updates/upload/main"
