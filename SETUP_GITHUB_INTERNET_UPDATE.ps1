@@ -163,9 +163,8 @@ Write-Host "APK: $outApk" -ForegroundColor White
 Write-Host "JSON: $outJson" -ForegroundColor White
 Write-Host ""
 Write-Host "A GitHub upload page will open now." -ForegroundColor Cyan
-Write-Host "Upload BOTH files from Downloads:" -ForegroundColor Cyan
+Write-Host "Upload ONLY this file from Downloads:" -ForegroundColor Cyan
 Write-Host "  VOICE_NOTES_LATEST.apk" -ForegroundColor White
-Write-Host "  update.json" -ForegroundColor White
 
 try {
     Start-Process "https://github.com/kostaselectroexpert-ux/voice-notes-updates/upload/main"
